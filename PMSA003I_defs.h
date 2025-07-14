@@ -32,9 +32,21 @@
 #define PMSA003I_REG_DATA12_L       0x1B
 #define PMSA003I_REG_DATA13_H       0x1C
 #define PMSA003I_REG_DATA13_L       0x1D
-#define PMSA003I_REG_CHECK_H        0x16
-#define PMSA003I_REG_CHECK_H        0x17
+#define PMSA003I_REG_CHECK_H1        0x16
+#define PMSA003I_REG_CHECK_H2        0x17
 
-#define PMSA003I_I2C_ADDR           0x12
+//particle sizes
+#define PMSA003I_PM_0_3  0x00
+#define PMSA003I_PM_0_5  0x01
+#define PMSA003I_PM_1_0  0x02
+#define PMSA003I_PM_2_5  0x03
+#define PMSA003I_PM_5_0  0x04
+#define PMSA003I_PM_10_0 0x05
+
+//working states
+#define PMSA003I_WS_SLEEP  0x00
+#define PMSA003I_WS_NORMAL 0x01
+
+#define PMSA003I_I2C_ADDR   0x12
 
 #endif
