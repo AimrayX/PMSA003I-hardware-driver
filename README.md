@@ -21,7 +21,7 @@ A C-based driver for interfacing with the **Plantower PMSA003I** laser particle 
 
 ## 🔧 Setup
 
-### 1. Enable I2C and Install Dependencies
+### Enable I2C and Install Dependencies
 
 ```bash
 sudo raspi-config       # Enable I2C under Interface Options
