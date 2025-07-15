@@ -65,31 +65,28 @@ int pmsa003i_close(pmsa003i_t *dev) {
     return 0;
 }
 
-uint8_t pmsa003i_read_register(pmsa003i_t *dev) {
+int pmsa003i_read_register(pmsa003i_t *dev) {
     struct i2c_rdwr_ioctl_data packets;
     struct i2c_msg messages[2];
     uint8_t buf[32];
     uint8_t start_reg = 0x00;
 
-    // Message 1: Write register address
     messages[0].addr  = dev->i2c_addr;
     messages[0].flags = 0; // Write
     messages[0].len   = 1;
     messages[0].buf   = &start_reg;
 
-    // Message 2: Read `len` bytes from that register
     messages[1].addr  = dev->i2c_addr;
     messages[1].flags = I2C_M_RD; // Read
     messages[1].len   = 32;
     messages[1].buf   = buf;
 
-    // Combine messages into a single I2C_RDWR transaction
     packets.msgs  = messages;
     packets.nmsgs = 2;
 
     if (ioctl(dev->i2c_fd, I2C_RDWR, &packets) < 0) {
         fprintf(stderr, "[ERROR] %s:%d: Failed to read register\n", __FILE__, __LINE__);
-        return 1;
+        return -1;
     }
 
     dev->PM_1_0_factory = (buf[PMSA003I_REG_DATA1_H] << 8) | buf[PMSA003I_REG_DATA1_L];
