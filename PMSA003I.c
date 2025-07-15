@@ -4,36 +4,55 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
+
+#include <errno.h>
 
 int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t set_pin) {
     dev->reset_pin = reset_pin;
     dev->set_pin = set_pin;
     
     if (gpioInitialise() < 0) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to init gpio", __FILE__, __LINE__);
-        return 1;
+        fprintf(stderr, "[ERROR] %s:%d: Failed to init gpio\n", __FILE__, __LINE__);
+        return -1;
     }
-    gpioSetMode(reset_pin, PI_INPUT);
-    gpioSetMode(set_pin, PI_INPUT);
+    if (gpioSetMode(reset_pin, PI_INPUT) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to set gpio mode\n", __FILE__, __LINE__);
+        return -1;
+    }
+    if (gpioSetMode(set_pin, PI_INPUT) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to set gpio mode\n", __FILE__, __LINE__);
+        return -1;
+    }
     pmsa003i_reset(dev);
 
     dev->i2c_fd = pmsa003i_get_handle(bus);
     dev->i2c_addr = PMSA003I_I2C_ADDR;
+    pmsa003i_set_WS(dev, PMSA003I_WS_NORMAL);
     return 0;
 }
 
 int pmsa003i_reset(pmsa003i_t *dev) {
-    gpioWrite(dev->reset_pin, 0);
+    if (gpioWrite(dev->reset_pin, 0) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to reset\n", __FILE__, __LINE__);
+        return -1;
+    }
     sleep(1);
-    gpioWrite(dev->reset_pin, 1);
+    if (gpioWrite(dev->reset_pin, 1) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to reset\n", __FILE__, __LINE__);
+        return -1;
+    }
     sleep(3);
     return 0;
 }
 
 int pmsa003i_set_WS(pmsa003i_t *dev, uint8_t working_state) {
-    gpioWrite(dev->set_pin, working_state);
+    if (gpioWrite(dev->set_pin, working_state) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to set working state\n", __FILE__, __LINE__);
+        return -1;
+    }
     return 0;
 }
 
@@ -46,25 +65,47 @@ int pmsa003i_close(pmsa003i_t *dev) {
     return 0;
 }
 
-uint8_t pmsa003i_read_register(pmsa003i_t *dev, uint8_t reg) {
-    if (ioctl(dev->i2c_fd, I2C_SLAVE, PMSA003I_I2C_ADDR) < 0) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to talk to slave", __FILE__, __LINE__);
-        close(dev->i2c_fd);
+uint8_t pmsa003i_read_register(pmsa003i_t *dev) {
+    struct i2c_rdwr_ioctl_data packets;
+    struct i2c_msg messages[2];
+    uint8_t buf[32];
+    uint8_t start_reg = 0x00;
+
+    // Message 1: Write register address
+    messages[0].addr  = dev->i2c_addr;
+    messages[0].flags = 0; // Write
+    messages[0].len   = 1;
+    messages[0].buf   = &start_reg;
+
+    // Message 2: Read `len` bytes from that register
+    messages[1].addr  = dev->i2c_addr;
+    messages[1].flags = I2C_M_RD; // Read
+    messages[1].len   = 32;
+    messages[1].buf   = buf;
+
+    // Combine messages into a single I2C_RDWR transaction
+    packets.msgs  = messages;
+    packets.nmsgs = 2;
+
+    if (ioctl(dev->i2c_fd, I2C_RDWR, &packets) < 0) {
+        fprintf(stderr, "[ERROR] %s:%d: Failed to read register\n", __FILE__, __LINE__);
         return 1;
     }
 
-    if (write(dev->i2c_fd, &reg, 1) != 1) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to write register address", __FILE__, __LINE__);
-        return 1;
-    }
+    dev->PM_1_0_factory = (buf[PMSA003I_REG_DATA1_H] << 8) | buf[PMSA003I_REG_DATA1_L];
+    dev->PM_2_5_factory = (buf[PMSA003I_REG_DATA2_H] << 8) | buf[PMSA003I_REG_DATA2_L];
+    dev->PM_10_0_factory = (buf[PMSA003I_REG_DATA3_H] << 8) | buf[PMSA003I_REG_DATA3_L];
+    dev->PM_1_0_atmospheric_environment = (buf[PMSA003I_REG_DATA4_H] << 8) | buf[PMSA003I_REG_DATA4_L];
+    dev->PM_2_5_atmospheric_environment = (buf[PMSA003I_REG_DATA5_H] << 8) | buf[PMSA003I_REG_DATA5_L];
+    dev->PM_10_0_atmospheric_environment = (buf[PMSA003I_REG_DATA6_H] << 8) | buf[PMSA003I_REG_DATA6_L];
+    dev->PM_0_3_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA7_H] << 8) | buf[PMSA003I_REG_DATA7_L];
+    dev->PM_0_5_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA8_H] << 8) | buf[PMSA003I_REG_DATA8_L];
+    dev->PM_1_0_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA9_H] << 8) | buf[PMSA003I_REG_DATA9_L];
+    dev->PM_2_5_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA10_H] << 8) | buf[PMSA003I_REG_DATA10_L];
+    dev->PM_5_0_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA11_H] << 8) | buf[PMSA003I_REG_DATA11_L];
+    dev->PM_10_0_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA12_H] << 8) | buf[PMSA003I_REG_DATA12_L];
 
-    uint8_t value;
-    if (read(dev->i2c_fd, &value, 1) != 1) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to read from register", __FILE__, __LINE__);
-        return 1;
-    }
-
-    return value;
+    return 0;
 }
 
 int pmsa003i_get_handle(const char *bus) {
@@ -72,115 +113,94 @@ int pmsa003i_get_handle(const char *bus) {
     
     if((fd = open(bus, O_RDWR)) < 0) {
         fprintf(stderr, "[ERROR] %s:%d: Failed to get handle\n", __FILE__, __LINE__);
-        return 1;
+        return -1;
     }
 
     if (ioctl(fd, I2C_SLAVE, PMSA003I_I2C_ADDR) < 0) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to talk to slave", __FILE__, __LINE__);
+        fprintf(stderr, "[ERROR] %s:%d: Failed to talk to slave\n", __FILE__, __LINE__);
         close(fd);
-        return 1;
+        return -1;
     }
+    fprintf(stderr, "[INFO] %s:%d: File Descriptor is: %d\n", __FILE__, __LINE__, fd);
     return fd;
 }
 
 uint16_t pmsa003i_read_PM_factory_calibrated(pmsa003i_t *dev, uint8_t size) {
-    
-    uint16_t rslt = 0;
-    if (size == PMSA003I_PM_1_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA1_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA1_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_1_0_factory = rslt;
-
-    } else if (size == PMSA003I_PM_2_5) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA2_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA2_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_2_5_factory = rslt;
-
-    } else if (size == PMSA003I_PM_10_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA3_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA3_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_10_0_factory = rslt;
-
-    } else {
-        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist for this category", __FILE__, __LINE__);
-        return 1;
+    if (pmsa003i_read_register(dev) != 0)
+    {
+        return -1;
     }
     
-    return rslt;
+    if (size == PMSA003I_PM_1_0) {
+        return dev->PM_1_0_factory;
+
+    } else if (size == PMSA003I_PM_2_5) {
+        return dev->PM_2_5_factory;
+
+    } else if (size == PMSA003I_PM_10_0) {
+        return dev->PM_10_0_factory;
+
+    } else {
+        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist for this category\n", __FILE__, __LINE__);
+        return -1;
+    }
+    
+    return -1;
 }
 
 uint16_t pmsa003i_read_PM_atmospheric_environment(pmsa003i_t *dev, uint8_t size) {
-    uint16_t rslt = 0;
-    if (size == PMSA003I_PM_1_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA4_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA4_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_1_0_atmospheric_environment = rslt;
-
-    } else if (size == PMSA003I_PM_2_5) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA5_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA5_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_2_5_atmospheric_environment = rslt;
-
-    } else if (size == PMSA003I_PM_10_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA6_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA6_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_10_0_atmospheric_environment = rslt;
-
-    } else {
-        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist for this category", __FILE__, __LINE__);
-        return 1;
+    if (pmsa003i_read_register(dev) != 0)
+    {
+        return -1;
     }
     
-    return rslt;
+    if (size == PMSA003I_PM_1_0) {
+        return dev->PM_1_0_atmospheric_environment;
+
+    } else if (size == PMSA003I_PM_2_5) {
+        return dev->PM_2_5_atmospheric_environment;
+
+    } else if (size == PMSA003I_PM_10_0) {
+        return dev->PM_10_0_atmospheric_environment;
+
+    } else {
+        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist for this category\n", __FILE__, __LINE__);
+        return -1;
+    }
+    
+    return -1;
 }
 
 uint16_t pmsa003i_read_PM_size_and_greater_in_0_1L(pmsa003i_t *dev, uint8_t size) {
-    uint16_t rslt = 0;
+    if (pmsa003i_read_register(dev) != 0)
+    {
+        return -1;
+    }
+
     if (size == PMSA003I_PM_0_3) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA7_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA7_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_0_3_and_greater_in_0_1L = rslt;
+        return dev->PM_0_3_and_greater_in_0_1L;
 
     } else if (size == PMSA003I_PM_0_5) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA8_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA8_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_0_5_and_greater_in_0_1L = rslt;
+        return dev->PM_0_5_and_greater_in_0_1L;
 
     } else if (size == PMSA003I_PM_1_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA9_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA9_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_1_0_and_greater_in_0_1L = rslt;
+        return dev->PM_1_0_and_greater_in_0_1L;
 
     } else if (size == PMSA003I_PM_2_5) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA10_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA10_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_2_5_and_greater_in_0_1L = rslt;
+        return dev->PM_2_5_and_greater_in_0_1L;
+
     } else if (size == PMSA003I_PM_5_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA11_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA11_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_5_0_and_greater_in_0_1L = rslt;
+        return dev->PM_5_0_and_greater_in_0_1L;
+
     } else if (size == PMSA003I_PM_10_0) {
-        uint16_t high = pmsa003i_read_register(dev, PMSA003I_REG_DATA12_H);
-        uint16_t low = pmsa003i_read_register(dev, PMSA003I_REG_DATA12_L);
-        rslt = ((uint16_t)high << 8) | low;
-        dev->PM_10_0_and_greater_in_0_1L = rslt;
+        return dev->PM_10_0_and_greater_in_0_1L;
+
     } else {
-        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist at all or for this category", __FILE__, __LINE__);
-        return 1;
+        fprintf(stderr, "[ERROR] %s:%d: Size doesn't exist for this category\n", __FILE__, __LINE__);
+        return -1;
     }
     
-    return rslt;
+    return -1;
 }
 
 

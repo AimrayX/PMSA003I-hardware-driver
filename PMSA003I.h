@@ -4,6 +4,7 @@
 #include "PMSA003I_defs.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct PMSA003I
 {
@@ -32,9 +33,11 @@ int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t 
 
 int pmsa003i_reset(pmsa003i_t *dev);
 
+int pmsa003i_get_handle(const char *bus);
+
 int pmsa003i_set_WS(pmsa003i_t *dev, uint8_t working_state);
 
-uint8_t pmsa003i_read_register(pmsa003i_t *dev, uint8_t reg);
+uint8_t pmsa003i_read_register(pmsa003i_t *dev);
 
 uint16_t pmsa003i_read_PM_factory_calibrated(pmsa003i_t *dev, uint8_t size);
 

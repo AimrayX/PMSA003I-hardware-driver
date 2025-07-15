@@ -49,4 +49,6 @@
 
 #define PMSA003I_I2C_ADDR   0x12
 
+#define PMSA003I_READ_ERROR ((uint16_t)(-1))
+
 #endif
