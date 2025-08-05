@@ -10,9 +10,11 @@
 
 #include <errno.h>
 
-int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t set_pin) {
+int pmsa003i_begin(pmsa003i_t *dev, int fd, uint8_t reset_pin, uint8_t set_pin) {
     dev->reset_pin = reset_pin;
     dev->set_pin = set_pin;
+    dev->i2c_fd = fd;
+    dev->i2c_addr = PMSA003I_I2C_ADDR;
     
     if (gpioInitialise() < 0) {
         fprintf(stderr, "[ERROR] %s:%d: Failed to init gpio\n", __FILE__, __LINE__);
@@ -26,11 +28,11 @@ int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t 
         fprintf(stderr, "[ERROR] %s:%d: Failed to set gpio mode\n", __FILE__, __LINE__);
         return -1;
     }
+
     pmsa003i_reset(dev);
 
-    dev->i2c_fd = pmsa003i_get_handle(bus);
-    dev->i2c_addr = PMSA003I_I2C_ADDR;
     pmsa003i_set_WS(dev, PMSA003I_WS_NORMAL);
+
     return 0;
 }
 
@@ -103,23 +105,6 @@ int pmsa003i_read_register(pmsa003i_t *dev) {
     dev->PM_10_0_and_greater_in_0_1L = (buf[PMSA003I_REG_DATA12_H] << 8) | buf[PMSA003I_REG_DATA12_L];
 
     return 0;
-}
-
-int pmsa003i_get_handle(const char *bus) {
-    int fd = 0; 
-    
-    if((fd = open(bus, O_RDWR)) < 0) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to get handle\n", __FILE__, __LINE__);
-        return -1;
-    }
-
-    if (ioctl(fd, I2C_SLAVE, PMSA003I_I2C_ADDR) < 0) {
-        fprintf(stderr, "[ERROR] %s:%d: Failed to talk to slave\n", __FILE__, __LINE__);
-        close(fd);
-        return -1;
-    }
-    fprintf(stderr, "[INFO] %s:%d: File Descriptor is: %d\n", __FILE__, __LINE__, fd);
-    return fd;
 }
 
 uint16_t pmsa003i_read_PM_factory_calibrated(pmsa003i_t *dev, uint8_t size) {

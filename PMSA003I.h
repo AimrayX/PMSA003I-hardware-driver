@@ -39,7 +39,7 @@ typedef struct PMSA003I
  * @param set_pin GPIO pin which the set is connected to
  * @return Returns 0 if normal -1 for error
  */
-int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t set_pin);
+int pmsa003i_begin(pmsa003i_t *dev, int fd, uint8_t reset_pin, uint8_t set_pin);
 
 /**
  * @brief Resets sensor
@@ -49,15 +49,6 @@ int pmsa003i_begin(pmsa003i_t *dev, const char *bus, uint8_t reset_pin, uint8_t 
  * @return Returns 0 if normal -1 for error
  */
 int pmsa003i_reset(pmsa003i_t *dev);
-
-/**
- * @brief Gets file descriptor of sensor
- *
- * 
- * @param dev Device pointer to pmsa003i struct
- * @return Returns 0 if normal -1 for error
- */
-int pmsa003i_get_handle(const char *bus);
 
 /**
  * @brief Sets working state of sensor
